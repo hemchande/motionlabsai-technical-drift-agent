@@ -1,0 +1,52 @@
+[project]
+name = "cvmlagent"
+version = "0.1.0"
+description = "CV ML Agent for Gymnastics Analytics - Agentic ML workflow with model selection, CV tools, and FIG standard reasoning"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "vision-agents[getstream,openai,ultralytics,gemini]",
+    "python-dotenv",
+    "opencv-python>=4.8.0",
+    "numpy>=1.24.0",
+    "ultralytics>=8.0.0",
+    "torch>=2.0.0",
+    "torchvision>=0.15.0",
+    "onnxruntime>=1.16.0",  # For HRNet inference
+    "google-generativeai",  # For Gemini reasoning model
+    "openai",  # For OpenAI reasoning model
+    "tavily-python",  # For web search in deep research
+    "inference-sdk",  # For Roboflow segmentation
+    "face-recognition",  # For face recognition
+    "faiss-cpu",  # Optional: For vector index (face embeddings)
+    "sentence-transformers",  # For text embeddings in session history
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "black",
+    "ruff",
+]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

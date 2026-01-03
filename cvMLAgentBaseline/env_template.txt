@@ -1,0 +1,41 @@
+# Stream API Credentials (Required for video streaming)
+STREAM_API_KEY=your_stream_api_key_here
+STREAM_API_SECRET=your_stream_api_secret_here
+
+# LLM Provider (choose one or both)
+GEMINI_API_KEY=your_gemini_api_key_here
+# OR
+OPENAI_API_KEY=your_openai_api_key_here
+
+# Web Search (for deep research)
+TAVILY_API_KEY=your_tavily_api_key_here
+
+# Roboflow (for segmentation)
+ROBOFLOW_API_KEY=your_roboflow_api_key_here
+# Default: s0wETXLIwp979GIThfx2 (provided by user)
+
+# MongoDB (optional, for session persistence)
+MONGODB_URI=mongodb://localhost:27017
+MONGODB_DATABASE=gymnastics_analytics
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
