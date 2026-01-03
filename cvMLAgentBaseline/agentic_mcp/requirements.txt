@@ -4,6 +4,9 @@ langchain-openai>=0.0.5
 langchain-core>=0.1.0
 langchain-community>=0.0.20
 
+# LangChain MCP Adapters (for MultiServerMCPClient)
+langchain-mcp-adapters>=0.1.0
+
 # MCP Protocol
 mcp>=0.1.0
 
@@ -35,4 +38,3 @@ pytest-asyncio>=0.21.0
 
 # Utilities
 python-dateutil>=2.8.0
-

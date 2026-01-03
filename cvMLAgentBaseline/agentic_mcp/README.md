@@ -16,22 +16,29 @@ This implementation replaces the procedural `retrieval_queue_worker.py` with an 
 agentic_mcp/
 ├── README.md                    # This file
 ├── requirements.txt             # Python dependencies
-├── mcp_server.py               # Main MCP server with tool registry
-├── tools/                       # Tool implementations
-│   ├── __init__.py
-│   ├── mongodb_tools.py         # MongoDB operations
-│   ├── redis_tools.py           # Redis queue operations
-│   ├── websocket_tools.py       # WebSocket operations
-│   ├── cloudflare_tools.py      # Cloudflare Stream operations
-│   └── retrieval_tools.py       # Retrieval agent operations
-├── agent.py                     # LangChain agent orchestration
 ├── config.py                    # Configuration management
-├── tests/                       # Test files
-│   ├── test_mcp_server.py
-│   ├── test_agent.py
-│   └── test_tools.py
+│
+├── agent.py                     # LangChain agent (direct tools approach)
+├── agent_mcp.py                 # LangChain agent (MCP server approach) ⭐ RECOMMENDED
+│
+├── mcp_server.py               # Legacy: Direct tool registry
+├── tools/                       # Legacy: Direct tool implementations
+│   ├── __init__.py
+│   ├── mongodb_tools.py
+│   ├── redis_tools.py
+│   ├── websocket_tools.py
+│   ├── cloudflare_tools.py
+│   └── retrieval_tools.py
+│
+├── mcp_servers/                 # MCP Protocol Servers ⭐ NEW
+│   ├── __init__.py
+│   ├── mongodb_server.py        # MongoDB MCP server
+│   ├── redis_server.py          # Redis MCP server
+│   └── retrieval_server.py      # Retrieval agent MCP server
+│
 └── examples/                    # Example usage
-    ├── basic_usage.py
+    ├── basic_usage.py           # Direct tools example
+    ├── basic_usage_mcp.py       # MCP server example ⭐ RECOMMENDED
     └── full_pipeline.py
 ```
 
@@ -44,6 +51,8 @@ cd agentic_mcp
 pip install -r requirements.txt
 ```
 
+**Important**: Make sure `langchain-mcp-adapters` is installed for the MCP approach.
+
 ### 2. Configure Environment
 
 ```bash
@@ -51,36 +60,124 @@ cp ../env_template.txt .env
 # Edit .env with your credentials
 ```
 
-### 3. Run Basic Test
+### 3. Run Basic Test (MCP Server Approach) ⭐ RECOMMENDED
+
+```bash
+python examples/basic_usage_mcp.py
+```
+
+### 4. Run Basic Test (Direct Tools Approach)
 
 ```bash
 python examples/basic_usage.py
 ```
 
-### 4. Run Full Pipeline
+### 5. Run Full Pipeline
 
 ```bash
 python examples/full_pipeline.py --athlete-id test_athlete_001
 ```
 
+## 🔄 Two Implementation Approaches
+
+### Approach 1: MCP Servers (Recommended) ⭐
+
+Uses LangChain's `MultiServerMCPClient` to connect to proper MCP protocol servers.
+
+**Files**:
+- `agent_mcp.py` - Agent using MultiServerMCPClient
+- `mcp_servers/mongodb_server.py` - MongoDB MCP server
+- `mcp_servers/redis_server.py` - Redis MCP server
+- `mcp_servers/retrieval_server.py` - Retrieval agent MCP server
+
+**Usage**:
+```python
+from agent_mcp import TechnicalDriftAgentMCP
+import asyncio
+
+async def main():
+    agent = TechnicalDriftAgentMCP()
+    await agent.initialize()
+    
+    result = await agent.process_video_session_message({
+        "session_id": "session_123",
+        "athlete_id": "athlete_001",
+        "activity": "gymnastics",
+        "technique": "back_handspring"
+    })
+    
+    await agent.close()
+
+asyncio.run(main())
+```
+
+**Benefits**:
+- ✅ Proper MCP protocol implementation
+- ✅ Servers can run independently
+- ✅ Better separation of concerns
+- ✅ Can use HTTP transport for remote servers
+
+### Approach 2: Direct Tools (Legacy)
+
+Uses LangChain tools directly without MCP protocol.
+
+**Files**:
+- `agent.py` - Agent with direct tools
+- `tools/*.py` - Direct tool implementations
+
+**Usage**:
+```python
+from agent import TechnicalDriftAgent
+
+agent = TechnicalDriftAgent()
+result = agent.process_video_session_message({
+    "session_id": "session_123",
+    "athlete_id": "athlete_001",
+    "activity": "gymnastics",
+    "technique": "back_handspring"
+})
+```
+
 ## 🔧 Components
 
-### MCP Server (`mcp_server.py`)
+### MCP Servers (`mcp_servers/`) ⭐ RECOMMENDED
 
-Main server that registers all tools and provides the tool registry interface.
+Proper MCP protocol servers that expose tools:
+- **MongoDB Server** (`mongodb_server.py`): Query sessions, upsert insights, get baseline/drift flags
+- **Redis Server** (`redis_server.py`): Send/receive queue messages
+- **Retrieval Server** (`retrieval_server.py`): Extract insights, track trends, establish baselines, detect drift
 
-### Tools (`tools/`)
+Each server follows the MCP protocol and can run as a subprocess or HTTP server.
 
-Individual tool implementations for each service:
-- **MongoDB Tools**: Query sessions, upsert insights/trends/baselines/alerts
-- **Redis Tools**: Send/receive queue messages
-- **WebSocket Tools**: Broadcast alerts
-- **Cloudflare Tools**: Get stream URLs
-- **Retrieval Tools**: Extract insights, track trends, establish baselines, detect drift
+### Agent with MCP (`agent_mcp.py`) ⭐ RECOMMENDED
 
-### Agent (`agent.py`)
+Uses `MultiServerMCPClient` to connect to MCP servers:
+```python
+client = MultiServerMCPClient({
+    "mongodb": {
+        "command": "python",
+        "args": ["mcp_servers/mongodb_server.py"],
+        "transport": "stdio",
+    },
+    "redis": {
+        "command": "python",
+        "args": ["mcp_servers/redis_server.py"],
+        "transport": "stdio",
+    },
+    "retrieval": {
+        "command": "python",
+        "args": ["mcp_servers/retrieval_server.py"],
+        "transport": "stdio",
+    }
+})
+all_tools = await client.get_tools()
+```
 
-LangChain agent that orchestrates the pipeline using the tools.
+### Legacy Components
+
+- **MCP Server** (`mcp_server.py`): Direct tool registry (legacy)
+- **Tools** (`tools/`): Direct tool implementations (legacy)
+- **Agent** (`agent.py`): Agent with direct tools (legacy)
 
 ## 📖 Usage
 
