@@ -30,6 +30,36 @@ except ImportError:
 # Create MCP server
 server = Server("retrieval-server")
 
+# Global retrieval agent (initialized on startup)
+retrieval_agent: Optional[FormCorrectionRetrievalAgent] = None
+
+
+@server.on_initialize()
+async def on_initialize() -> None:
+    """Initialize retrieval agent on server startup."""
+    global retrieval_agent
+    
+    # Validate configuration
+    try:
+        Config.validate()
+    except ValueError as e:
+        print(f"❌ Configuration error: {e}", file=sys.stderr)
+        return
+    
+    if not RETRIEVAL_AVAILABLE:
+        print("⚠️  Retrieval agent not available", file=sys.stderr)
+        return
+    
+    try:
+        # Initialize retrieval agent (it will use Config for MongoDB connection)
+        retrieval_agent = FormCorrectionRetrievalAgent()
+        
+        print(f"✅ Retrieval server initialized", file=sys.stderr)
+        print(f"   Agent ready for: extract_insights, track_trends, establish_baseline, detect_drift", file=sys.stderr)
+    except Exception as e:
+        print(f"❌ Failed to initialize retrieval agent: {e}", file=sys.stderr)
+        retrieval_agent = None
+
 
 @server.list_tools()
 async def list_tools() -> List[Tool]:
@@ -98,14 +128,17 @@ async def list_tools() -> List[Tool]:
 @server.call_tool()
 async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
     """Handle tool calls."""
-    if not RETRIEVAL_AVAILABLE:
+    global retrieval_agent
+    
+    if not RETRIEVAL_AVAILABLE or retrieval_agent is None:
         return [TextContent(
             type="text",
-            text=json.dumps({"error": "Retrieval agent not available", "success": False})
+            text=json.dumps({"error": "Retrieval agent not available or not initialized", "success": False})
         )]
     
     try:
-        agent = FormCorrectionRetrievalAgent()
+        # Use the initialized agent
+        agent = retrieval_agent
         
         if name == "retrieval_extract_insights":
             sessions = agent.find_sessions_with_form_issues(

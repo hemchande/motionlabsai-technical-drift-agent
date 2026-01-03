@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from datetime import datetime
+import sys
 
 # Add parent directories to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -31,6 +32,41 @@ except ImportError:
 
 # Create MCP server
 server = Server("mongodb-server")
+
+# Global MongoDB connection (initialized on startup)
+mongodb_service: Optional[MongoDBService] = None
+
+
+@server.on_initialize()
+async def on_initialize() -> None:
+    """Initialize MongoDB connection on server startup."""
+    global mongodb_service
+    
+    # Validate configuration
+    try:
+        Config.validate()
+    except ValueError as e:
+        print(f"❌ Configuration error: {e}", file=sys.stderr)
+        return
+    
+    if not MONGODB_AVAILABLE:
+        print("⚠️  MongoDB service not available", file=sys.stderr)
+        return
+    
+    try:
+        # Initialize MongoDB connection
+        mongodb_service = MongoDBService()
+        mongodb_service.connect()
+        
+        # Test connection
+        mongodb_service.get_sessions_collection().find_one()
+        
+        print(f"✅ MongoDB server initialized", file=sys.stderr)
+        print(f"   Database: {Config.MONGODB_DATABASE}", file=sys.stderr)
+        print(f"   URI: {Config.MONGODB_URI[:50]}..." if len(Config.MONGODB_URI) > 50 else f"   URI: {Config.MONGODB_URI}", file=sys.stderr)
+    except Exception as e:
+        print(f"❌ Failed to initialize MongoDB: {e}", file=sys.stderr)
+        mongodb_service = None
 
 
 @server.list_tools()
@@ -96,15 +132,17 @@ async def list_tools() -> List[Tool]:
 @server.call_tool()
 async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
     """Handle tool calls."""
-    if not MONGODB_AVAILABLE:
+    global mongodb_service
+    
+    if not MONGODB_AVAILABLE or mongodb_service is None:
         return [TextContent(
             type="text",
-            text=json.dumps({"error": "MongoDB service not available", "success": False})
+            text=json.dumps({"error": "MongoDB service not available or not initialized", "success": False})
         )]
     
     try:
-        mongodb = MongoDBService()
-        mongodb.connect()
+        # Use the initialized connection (no need to reconnect)
+        mongodb = mongodb_service
         
         if name == "mongodb_query_sessions":
             query = {}
@@ -146,7 +184,7 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
                 ]
             }
             
-            mongodb.close()
+            # Don't close - reuse connection
             return [TextContent(type="text", text=json.dumps(result, default=str))]
         
         elif name == "mongodb_upsert_insights":
@@ -157,7 +195,7 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
                 activity=arguments["activity"],
                 technique=arguments["technique"]
             )
-            mongodb.close()
+            # Don't close - reuse connection
             
             return [TextContent(type="text", text=json.dumps({
                 "success": True,
@@ -167,7 +205,7 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
         
         elif name == "mongodb_get_baseline":
             baseline = mongodb.get_baseline(athlete_id=arguments["athlete_id"])
-            mongodb.close()
+            # Don't close - reuse connection
             
             if baseline:
                 result = {
@@ -188,7 +226,7 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
         
         elif name == "mongodb_get_drift_flag":
             flag = mongodb.get_drift_detection_flag(athlete_id=arguments["athlete_id"])
-            mongodb.close()
+            # Don't close - reuse connection
             
             if flag:
                 result = {

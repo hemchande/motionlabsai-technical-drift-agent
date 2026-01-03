@@ -8,7 +8,7 @@ Run with: python redis_server.py
 import sys
 import json
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 # Add parent directories to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -29,6 +29,45 @@ except ImportError:
 
 # Create MCP server
 server = Server("redis-server")
+
+# Global Redis connection (initialized on startup)
+redis_client: Optional[redis.Redis] = None
+
+
+@server.on_initialize()
+async def on_initialize() -> None:
+    """Initialize Redis connection on server startup."""
+    global redis_client
+    
+    # Validate configuration
+    try:
+        Config.validate()
+    except ValueError as e:
+        print(f"❌ Configuration error: {e}", file=sys.stderr)
+        return
+    
+    if not REDIS_AVAILABLE:
+        print("⚠️  Redis not available", file=sys.stderr)
+        return
+    
+    try:
+        # Initialize Redis connection
+        redis_client = redis.Redis(
+            host=Config.REDIS_HOST,
+            port=Config.REDIS_PORT,
+            decode_responses=True,
+            socket_connect_timeout=5,
+            socket_keepalive=True
+        )
+        
+        # Test connection
+        redis_client.ping()
+        
+        print(f"✅ Redis server initialized", file=sys.stderr)
+        print(f"   Host: {Config.REDIS_HOST}:{Config.REDIS_PORT}", file=sys.stderr)
+    except Exception as e:
+        print(f"❌ Failed to initialize Redis: {e}", file=sys.stderr)
+        redis_client = None
 
 
 @server.list_tools()
@@ -66,22 +105,21 @@ async def list_tools() -> List[Tool]:
 @server.call_tool()
 async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
     """Handle tool calls."""
-    if not REDIS_AVAILABLE:
+    global redis_client
+    
+    if not REDIS_AVAILABLE or redis_client is None:
         return [TextContent(
             type="text",
-            text=json.dumps({"error": "Redis not available", "success": False})
+            text=json.dumps({"error": "Redis not available or not initialized", "success": False})
         )]
     
     try:
-        redis_client = redis.Redis(
-            host=Config.REDIS_HOST,
-            port=Config.REDIS_PORT,
-            decode_responses=True
-        )
+        # Use the initialized connection
+        client = redis_client
         
         if name == "redis_send_to_queue":
             message_json = json.dumps(arguments["message"])
-            redis_client.lpush(arguments["queue_name"], message_json)
+            client.lpush(arguments["queue_name"], message_json)
             
             return [TextContent(type="text", text=json.dumps({
                 "success": True,
@@ -95,7 +133,7 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
             timeout = arguments.get("timeout", 5)
             
             for _ in range(max_messages):
-                result = redis_client.brpop(arguments["queue_name"], timeout=timeout)
+                result = client.brpop(arguments["queue_name"], timeout=timeout)
                 if result:
                     queue, message_json = result
                     messages.append(json.loads(message_json))

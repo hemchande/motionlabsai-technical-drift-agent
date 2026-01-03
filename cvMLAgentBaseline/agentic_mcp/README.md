@@ -149,6 +149,29 @@ Proper MCP protocol servers that expose tools:
 
 Each server follows the MCP protocol and can run as a subprocess or HTTP server.
 
+**Automatic Initialization**: When the agent starts, it automatically:
+1. ✅ Starts all MCP servers as subprocesses
+2. ✅ Each server initializes its connections on startup:
+   - MongoDB server connects to MongoDB using `Config.MONGODB_URI`
+   - Redis server connects to Redis using `Config.REDIS_HOST` and `Config.REDIS_PORT`
+   - Retrieval server initializes the retrieval agent (which uses MongoDB)
+3. ✅ All configuration comes from environment variables (`.env` file)
+4. ✅ No hardcoding - everything is configurable
+5. ✅ Connection pooling - connections are reused, not recreated on each call
+
+**Startup Logs**: Each server prints initialization status to stderr:
+```
+✅ MongoDB server initialized
+   Database: gymnastics_analytics
+   URI: mongodb+srv://...
+
+✅ Redis server initialized
+   Host: localhost:6379
+
+✅ Retrieval server initialized
+   Agent ready for: extract_insights, track_trends, establish_baseline, detect_drift
+```
+
 ### Agent with MCP (`agent_mcp.py`) ⭐ RECOMMENDED
 
 Uses `MultiServerMCPClient` to connect to MCP servers:
