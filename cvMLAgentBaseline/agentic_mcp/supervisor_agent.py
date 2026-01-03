@@ -12,7 +12,7 @@ from typing import Dict, Any, Optional
 from langchain.agents import create_agent, AgentExecutor
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
-from langchain.tools import tool
+from langchain.tools import tool, ToolRuntime
 
 from config import Config
 from subagents import create_mongodb_agent, create_redis_agent, create_retrieval_agent
@@ -36,7 +36,10 @@ retrieval_agent = create_retrieval_agent(llm)
 
 # Wrap sub-agents as tools for the supervisor
 @tool
-def manage_mongodb(request: str) -> str:
+def manage_mongodb(
+    request: str,
+    runtime: ToolRuntime = None
+) -> str:
     """
     Manage MongoDB database operations.
     
@@ -52,8 +55,30 @@ def manage_mongodb(request: str) -> str:
     - "Get baseline for athlete_001"
     - "Check if drift detection is enabled for athlete_001"
     """
+    # Build enhanced prompt with supervisor context if available
+    if runtime and hasattr(runtime, 'state'):
+        # Get original user message from supervisor's conversation
+        messages = runtime.state.get("messages", [])
+        original_user_message = next(
+            (msg for msg in messages if hasattr(msg, 'type') and msg.type == "human"),
+            None
+        )
+        
+        if original_user_message:
+            # Pass full context to sub-agent
+            prompt = (
+                "You are assisting with the following user inquiry:\n\n"
+                f"{original_user_message.content if hasattr(original_user_message, 'content') else str(original_user_message)}\n\n"
+                "You are tasked with the following sub-request:\n\n"
+                f"{request}"
+            )
+        else:
+            prompt = request
+    else:
+        prompt = request
+    
     result = mongodb_agent.invoke({
-        "messages": [{"role": "user", "content": request}],
+        "messages": [{"role": "user", "content": prompt}],
     })
     # Return the final message from the sub-agent
     final_message = result["messages"][-1]
@@ -63,7 +88,10 @@ def manage_mongodb(request: str) -> str:
 
 
 @tool
-def manage_redis(request: str) -> str:
+def manage_redis(
+    request: str,
+    runtime: ToolRuntime = None
+) -> str:
     """
     Manage Redis queue operations.
     
@@ -76,8 +104,30 @@ def manage_redis(request: str) -> str:
     - "Send alert message to drift_alerts_queue with athlete_id athlete_001"
     - "Listen to retrievalQueue for new messages"
     """
+    # Build enhanced prompt with supervisor context if available
+    if runtime and hasattr(runtime, 'state'):
+        # Get original user message from supervisor's conversation
+        messages = runtime.state.get("messages", [])
+        original_user_message = next(
+            (msg for msg in messages if hasattr(msg, 'type') and msg.type == "human"),
+            None
+        )
+        
+        if original_user_message:
+            # Pass full context to sub-agent
+            prompt = (
+                "You are assisting with the following user inquiry:\n\n"
+                f"{original_user_message.content if hasattr(original_user_message, 'content') else str(original_user_message)}\n\n"
+                "You are tasked with the following sub-request:\n\n"
+                f"{request}"
+            )
+        else:
+            prompt = request
+    else:
+        prompt = request
+    
     result = redis_agent.invoke({
-        "messages": [{"role": "user", "content": request}],
+        "messages": [{"role": "user", "content": prompt}],
     })
     # Return the final message from the sub-agent
     final_message = result["messages"][-1]
@@ -87,7 +137,10 @@ def manage_redis(request: str) -> str:
 
 
 @tool
-def manage_retrieval(request: str) -> str:
+def manage_retrieval(
+    request: str,
+    runtime: ToolRuntime = None
+) -> str:
     """
     Manage retrieval agent operations for insights, trends, baselines, and drift detection.
     
@@ -104,8 +157,46 @@ def manage_retrieval(request: str) -> str:
     - "Establish baseline for athlete_001 with min_sessions 8"
     - "Detect drift for athlete_001 with session_id session_123"
     """
+    # Build enhanced prompt with supervisor context if available
+    if runtime and hasattr(runtime, 'state'):
+        # Get original user message from supervisor's conversation
+        messages = runtime.state.get("messages", [])
+        original_user_message = next(
+            (msg for msg in messages if hasattr(msg, 'type') and msg.type == "human"),
+            None
+        )
+        
+        # Get previous tool results for context
+        previous_tool_results = [
+            msg.content if hasattr(msg, 'content') else str(msg)
+            for msg in messages
+            if hasattr(msg, 'type') and msg.type == "tool"
+        ]
+        
+        if original_user_message:
+            # Pass full context to sub-agent
+            context_parts = [
+                "You are assisting with the following user inquiry:\n\n",
+                f"{original_user_message.content if hasattr(original_user_message, 'content') else str(original_user_message)}\n\n"
+            ]
+            
+            if previous_tool_results:
+                context_parts.append("Previous results from other operations:\n")
+                for i, result in enumerate(previous_tool_results[-3:], 1):  # Last 3 results
+                    context_parts.append(f"{i}. {result}\n")
+                context_parts.append("\n")
+            
+            context_parts.append("You are tasked with the following sub-request:\n\n")
+            context_parts.append(request)
+            
+            prompt = "".join(context_parts)
+        else:
+            prompt = request
+    else:
+        prompt = request
+    
     result = retrieval_agent.invoke({
-        "messages": [{"role": "user", "content": request}],
+        "messages": [{"role": "user", "content": prompt}],
     })
     # Return the final message from the sub-agent
     final_message = result["messages"][-1]
