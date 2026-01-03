@@ -60,27 +60,66 @@ cp ../env_template.txt .env
 # Edit .env with your credentials
 ```
 
-### 3. Run Basic Test (MCP Server Approach) ⭐ RECOMMENDED
+### 3. Run Supervisor Pattern Test ⭐⭐ RECOMMENDED
+
+```bash
+python examples/supervisor_usage.py
+```
+
+### 4. Run Basic Test (MCP Server Approach)
 
 ```bash
 python examples/basic_usage_mcp.py
 ```
 
-### 4. Run Basic Test (Direct Tools Approach)
+### 5. Run Basic Test (Direct Tools Approach)
 
 ```bash
 python examples/basic_usage.py
 ```
 
-### 5. Run Full Pipeline
+### 6. Run Full Pipeline
 
 ```bash
 python examples/full_pipeline.py --athlete-id test_athlete_001
 ```
 
-## 🔄 Two Implementation Approaches
+## 🔄 Three Implementation Approaches
 
-### Approach 1: MCP Servers (Recommended) ⭐
+### Approach 1: Supervisor Pattern (Recommended) ⭐⭐
+
+Uses LangChain's supervisor pattern with sub-agents wrapped as tools.
+
+**Files**:
+- `supervisor_agent.py` - Supervisor that coordinates sub-agents
+- `subagents/mongodb_agent.py` - MongoDB sub-agent
+- `subagents/redis_agent.py` - Redis sub-agent
+- `subagents/retrieval_agent.py` - Retrieval sub-agent
+
+**Usage**:
+```python
+from supervisor_agent import TechnicalDriftSupervisor
+
+supervisor = TechnicalDriftSupervisor()
+result = supervisor.process_video_session_message({
+    "session_id": "session_123",
+    "athlete_id": "athlete_001",
+    "activity": "gymnastics",
+    "technique": "back_handspring"
+})
+```
+
+**Benefits**:
+- ✅ Supervisor pattern from LangChain documentation
+- ✅ Sub-agents have focused responsibilities
+- ✅ Each sub-agent has its own tools and prompt
+- ✅ Supervisor coordinates via wrapped sub-agent tools
+- ✅ Clear separation of concerns
+- ✅ Easy to add new sub-agents
+
+**Based on**: [LangChain Supervisor Pattern Documentation](https://docs.langchain.com/oss/python/langchain/multi-agent/subagents-personal-assistant)
+
+### Approach 2: MCP Servers
 
 Uses LangChain's `MultiServerMCPClient` to connect to proper MCP protocol servers.
 
@@ -117,7 +156,7 @@ asyncio.run(main())
 - ✅ Better separation of concerns
 - ✅ Can use HTTP transport for remote servers
 
-### Approach 2: Direct Tools (Legacy)
+### Approach 3: Direct Tools (Legacy)
 
 Uses LangChain tools directly without MCP protocol.
 
