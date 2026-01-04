@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional
 import asyncio
 
-from langchain.agents import AgentExecutor, create_openai_tools_agent
+from langchain.agents import create_agent
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_mcp_adapters.client import MultiServerMCPClient
@@ -69,20 +69,24 @@ class TechnicalDriftAgentMCP:
         retrieval_server_path = str(base_path / "mcp_servers" / "retrieval_server.py")
         
         # Initialize MCP client with multiple servers
+        # Use python3 instead of python for compatibility
+        import sys
+        python_executable = sys.executable  # Use the same Python that's running this script
+        
         self.mcp_client = MultiServerMCPClient(
             {
                 "mongodb": {
-                    "command": "python",
+                    "command": python_executable,
                     "args": [mongodb_server_path],
                     "transport": "stdio",
                 },
                 "redis": {
-                    "command": "python",
+                    "command": python_executable,
                     "args": [redis_server_path],
                     "transport": "stdio",
                 },
                 "retrieval": {
-                    "command": "python",
+                    "command": python_executable,
                     "args": [retrieval_server_path],
                     "transport": "stdio",
                 }
@@ -99,7 +103,6 @@ class TechnicalDriftAgentMCP:
         # Tools will be loaded asynchronously
         self.tools = None
         self.agent = None
-        self.agent_executor = None
     
     async def initialize(self):
         """Initialize agent by getting tools from MCP servers."""
@@ -109,20 +112,24 @@ class TechnicalDriftAgentMCP:
         print(f"✅ Loaded {len(self.tools)} tools from MCP servers")
         print(f"   Tools: {', '.join([t.name for t in self.tools[:10]])}...")
         
-        # Create agent
-        self.agent = create_openai_tools_agent(
-            llm=self.llm,
-            tools=self.tools,
-            prompt=AGENT_PROMPT
-        )
+        # Create agent using create_agent (LangChain 1.2.0+)
+        # create_agent returns a Runnable that can be invoked directly
+        # Extract system prompt from the prompt template
+        # AGENT_PROMPT is a ChatPromptTemplate with messages
+        # The first message is the system message
+        system_message = AGENT_PROMPT.messages[0]
+        if hasattr(system_message, 'prompt') and hasattr(system_message.prompt, 'template'):
+            system_prompt_text = system_message.prompt.template
+        elif hasattr(system_message, 'content'):
+            system_prompt_text = system_message.content
+        else:
+            # Fallback: use the string representation
+            system_prompt_text = str(system_message)
         
-        # Create agent executor
-        self.agent_executor = AgentExecutor(
-            agent=self.agent,
+        self.agent = create_agent(
+            self.llm,
             tools=self.tools,
-            verbose=Config.AGENT_VERBOSE,
-            max_iterations=Config.AGENT_MAX_ITERATIONS,
-            handle_parsing_errors=True
+            system_prompt=system_prompt_text
         )
     
     async def process_video_session_message(self, message: Dict[str, Any]) -> Dict[str, Any]:
@@ -135,7 +142,7 @@ class TechnicalDriftAgentMCP:
         Returns:
             Dictionary with processing results
         """
-        if not self.agent_executor:
+        if not self.agent:
             await self.initialize()
         
         session_id = message.get("session_id")
@@ -162,7 +169,9 @@ Execute the complete pipeline:
 Use the available tools to complete each step. Parse JSON responses from tools to make decisions."""
         
         try:
-            result = await self.agent_executor.ainvoke({"input": prompt})
+            # In LangChain 1.2.0+, create_agent returns a Runnable
+            # We can invoke it directly with the input
+            result = await self.agent.ainvoke({"input": prompt})
             
             return {
                 "success": True,
@@ -226,7 +235,9 @@ Use the available tools to complete each step. Parse JSON responses from tools t
     
     async def close(self):
         """Close MCP client connections."""
-        if self.mcp_client:
+        # MultiServerMCPClient manages its own connections
+        # No explicit close needed, but we can clean up if needed
+        if hasattr(self.mcp_client, 'close'):
             await self.mcp_client.close()
 
 
@@ -251,4 +262,5 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
 

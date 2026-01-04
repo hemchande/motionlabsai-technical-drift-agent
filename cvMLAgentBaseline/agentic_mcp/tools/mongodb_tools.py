@@ -255,3 +255,4 @@ def mongodb_upsert_alert(
     """Upsert alert to MongoDB alerts collection."""
     return json.dumps({"error": "Not yet implemented", "success": False})
 
+

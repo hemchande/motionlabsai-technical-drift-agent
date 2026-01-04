@@ -14,7 +14,10 @@ from datetime import datetime
 import sys
 
 # Add parent directories to path
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+# When run as subprocess, need agentic_mcp directory in path
+agentic_mcp_dir = Path(__file__).parent.parent
+sys.path.insert(0, str(agentic_mcp_dir))
+sys.path.insert(0, str(agentic_mcp_dir.parent))
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
@@ -37,36 +40,8 @@ server = Server("mongodb-server")
 mongodb_service: Optional[MongoDBService] = None
 
 
-@server.on_initialize()
-async def on_initialize() -> None:
-    """Initialize MongoDB connection on server startup."""
-    global mongodb_service
-    
-    # Validate configuration
-    try:
-        Config.validate()
-    except ValueError as e:
-        print(f"❌ Configuration error: {e}", file=sys.stderr)
-        return
-    
-    if not MONGODB_AVAILABLE:
-        print("⚠️  MongoDB service not available", file=sys.stderr)
-        return
-    
-    try:
-        # Initialize MongoDB connection
-        mongodb_service = MongoDBService()
-        mongodb_service.connect()
-        
-        # Test connection
-        mongodb_service.get_sessions_collection().find_one()
-        
-        print(f"✅ MongoDB server initialized", file=sys.stderr)
-        print(f"   Database: {Config.MONGODB_DATABASE}", file=sys.stderr)
-        print(f"   URI: {Config.MONGODB_URI[:50]}..." if len(Config.MONGODB_URI) > 50 else f"   URI: {Config.MONGODB_URI}", file=sys.stderr)
-    except Exception as e:
-        print(f"❌ Failed to initialize MongoDB: {e}", file=sys.stderr)
-        mongodb_service = None
+# Note: MCP Server doesn't support on_initialize in this version
+# Using lazy initialization in call_tool instead
 
 
 @server.list_tools()
@@ -134,14 +109,26 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
     """Handle tool calls."""
     global mongodb_service
     
-    if not MONGODB_AVAILABLE or mongodb_service is None:
-        return [TextContent(
-            type="text",
-            text=json.dumps({"error": "MongoDB service not available or not initialized", "success": False})
-        )]
+    # Lazy initialization
+    if mongodb_service is None:
+        if not MONGODB_AVAILABLE:
+            return [TextContent(
+                type="text",
+                text=json.dumps({"error": "MongoDB service not available", "success": False})
+            )]
+        try:
+            Config.validate()
+            mongodb_service = MongoDBService()
+            mongodb_service.connect()
+            mongodb_service.get_sessions_collection().find_one()  # Test connection
+        except Exception as e:
+            return [TextContent(
+                type="text",
+                text=json.dumps({"error": f"MongoDB initialization failed: {str(e)}", "success": False})
+            )]
     
     try:
-        # Use the initialized connection (no need to reconnect)
+        # Use the initialized connection
         mongodb = mongodb_service
         
         if name == "mongodb_query_sessions":

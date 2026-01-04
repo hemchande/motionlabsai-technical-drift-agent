@@ -11,7 +11,10 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 # Add parent directories to path
-sys.path.insert(0, str(Path(__file__).parent.parent))
+# When run as subprocess, need agentic_mcp directory in path
+agentic_mcp_dir = Path(__file__).parent.parent
+sys.path.insert(0, str(agentic_mcp_dir))
+sys.path.insert(0, str(agentic_mcp_dir.parent))
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
@@ -34,40 +37,8 @@ server = Server("redis-server")
 redis_client: Optional[redis.Redis] = None
 
 
-@server.on_initialize()
-async def on_initialize() -> None:
-    """Initialize Redis connection on server startup."""
-    global redis_client
-    
-    # Validate configuration
-    try:
-        Config.validate()
-    except ValueError as e:
-        print(f"❌ Configuration error: {e}", file=sys.stderr)
-        return
-    
-    if not REDIS_AVAILABLE:
-        print("⚠️  Redis not available", file=sys.stderr)
-        return
-    
-    try:
-        # Initialize Redis connection
-        redis_client = redis.Redis(
-            host=Config.REDIS_HOST,
-            port=Config.REDIS_PORT,
-            decode_responses=True,
-            socket_connect_timeout=5,
-            socket_keepalive=True
-        )
-        
-        # Test connection
-        redis_client.ping()
-        
-        print(f"✅ Redis server initialized", file=sys.stderr)
-        print(f"   Host: {Config.REDIS_HOST}:{Config.REDIS_PORT}", file=sys.stderr)
-    except Exception as e:
-        print(f"❌ Failed to initialize Redis: {e}", file=sys.stderr)
-        redis_client = None
+# Note: MCP Server doesn't support on_initialize in this version
+# Using lazy initialization in call_tool instead
 
 
 @server.list_tools()
@@ -107,11 +78,28 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
     """Handle tool calls."""
     global redis_client
     
-    if not REDIS_AVAILABLE or redis_client is None:
-        return [TextContent(
-            type="text",
-            text=json.dumps({"error": "Redis not available or not initialized", "success": False})
-        )]
+    # Lazy initialization
+    if redis_client is None:
+        if not REDIS_AVAILABLE:
+            return [TextContent(
+                type="text",
+                text=json.dumps({"error": "Redis not available", "success": False})
+            )]
+        try:
+            Config.validate()
+            redis_client = redis.Redis(
+                host=Config.REDIS_HOST,
+                port=Config.REDIS_PORT,
+                decode_responses=True,
+                socket_connect_timeout=5,
+                socket_keepalive=True
+            )
+            redis_client.ping()  # Test connection
+        except Exception as e:
+            return [TextContent(
+                type="text",
+                text=json.dumps({"error": f"Redis initialization failed: {str(e)}", "success": False})
+            )]
     
     try:
         # Use the initialized connection

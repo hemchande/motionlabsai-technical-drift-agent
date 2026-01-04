@@ -11,7 +11,10 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 # Add parent directories to path
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+# When run as subprocess, need agentic_mcp directory in path
+agentic_mcp_dir = Path(__file__).parent.parent
+sys.path.insert(0, str(agentic_mcp_dir))
+sys.path.insert(0, str(agentic_mcp_dir.parent))
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
@@ -34,31 +37,8 @@ server = Server("retrieval-server")
 retrieval_agent: Optional[FormCorrectionRetrievalAgent] = None
 
 
-@server.on_initialize()
-async def on_initialize() -> None:
-    """Initialize retrieval agent on server startup."""
-    global retrieval_agent
-    
-    # Validate configuration
-    try:
-        Config.validate()
-    except ValueError as e:
-        print(f"❌ Configuration error: {e}", file=sys.stderr)
-        return
-    
-    if not RETRIEVAL_AVAILABLE:
-        print("⚠️  Retrieval agent not available", file=sys.stderr)
-        return
-    
-    try:
-        # Initialize retrieval agent (it will use Config for MongoDB connection)
-        retrieval_agent = FormCorrectionRetrievalAgent()
-        
-        print(f"✅ Retrieval server initialized", file=sys.stderr)
-        print(f"   Agent ready for: extract_insights, track_trends, establish_baseline, detect_drift", file=sys.stderr)
-    except Exception as e:
-        print(f"❌ Failed to initialize retrieval agent: {e}", file=sys.stderr)
-        retrieval_agent = None
+# Note: MCP Server doesn't support on_initialize in this version
+# Using lazy initialization in call_tool instead
 
 
 @server.list_tools()
@@ -130,11 +110,21 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
     """Handle tool calls."""
     global retrieval_agent
     
-    if not RETRIEVAL_AVAILABLE or retrieval_agent is None:
-        return [TextContent(
-            type="text",
-            text=json.dumps({"error": "Retrieval agent not available or not initialized", "success": False})
-        )]
+    # Lazy initialization
+    if retrieval_agent is None:
+        if not RETRIEVAL_AVAILABLE:
+            return [TextContent(
+                type="text",
+                text=json.dumps({"error": "Retrieval agent not available", "success": False})
+            )]
+        try:
+            Config.validate()
+            retrieval_agent = FormCorrectionRetrievalAgent()
+        except Exception as e:
+            return [TextContent(
+                type="text",
+                text=json.dumps({"error": f"Retrieval agent initialization failed: {str(e)}", "success": False})
+            )]
     
     try:
         # Use the initialized agent
